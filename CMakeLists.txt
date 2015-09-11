@@ -1,15 +1,19 @@
 cmake_minimum_required(VERSION 3.3)
-project(untitled)
+project(brumdrum)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror")
 
 set(SOURCE_FILES main.c)
 
-add_executable(untitled ${SOURCE_FILES})
+add_executable(${PROJECT_NAME} ${SOURCE_FILES})
 
 find_package(PkgConfig REQUIRED)
-pkg_search_module(GLFW REQUIRED glfw3)
-include_directories(${GLFW_INCLUDE_DIRS})
+find_package(GLEW REQUIRED)
+find_package(OpenGL REQUIRED)
 
-target_link_libraries(${PROJECT_NAME} ${GLFW_LIBRARIES} GL)
+pkg_search_module(GLFW REQUIRED glfw3)
+
+include_directories(${GLFW_INCLUDE_DIRS} ${GLEW_INCLUDE_DIRS})
+
+target_link_libraries(${PROJECT_NAME} ${OPENGL_LIBRARIES} ${GLFW_LIBRARIES} ${GLEW_LIBRARIES})
 

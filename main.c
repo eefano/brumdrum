@@ -1,10 +1,13 @@
-#include <GLES3/gl31.h>
+#include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
 #include <stdlib.h>
 
 
 int windoww = 256, windowh = 256, mousel = GL_FALSE;
+float mousec[4]={1.0, 1.0, 1.0, 1.0};
+
+const GLenum attachments[3]={GL_COLOR_ATTACHMENT0,GL_COLOR_ATTACHMENT1,GL_COLOR_ATTACHMENT2};
 
 double mousex = 0.0;
 double mousey = 0.0;
@@ -20,12 +23,21 @@ GLuint fb;
 GLuint pb;
 GLuint drawlist;
 
+GLuint rprogram;
+GLuint fprogram;
+GLuint sprogram;
 
 
-GLuint createshader(char *source,GLenum type)
+char vshader[]="";
+char rshader[]="";
+char fshader[]="";
+char sshader[]="";
+
+
+GLuint createshader(const GLchar *source,GLenum type)
 {
     GLuint shader = glCreateShader(type);
-    glShaderSource(shader,source);
+    glShaderSource(shader,1,&source,NULL);
     glCompileShader(shader);
     return shader;
 }
@@ -89,12 +101,12 @@ GLuint createfb(GLuint tex1, GLuint tex2, GLuint texs)
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, tex2, 0);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, texs, 0);
     glClearColor(0.5, 0.5, 0.5, 1.0);
-    glDrawBuffers(GL_COLOR_ATTACHMENT0);
+    glDrawBuffers(1,&attachments[0]);
     glClear(GL_COLOR_BUFFER_BIT);
-    glDrawBuffers(GL_COLOR_ATTACHMENT1);
+    glDrawBuffers(1,&attachments[1]);
     glClear(GL_COLOR_BUFFER_BIT);
     glClearColor(0.25, 0.0, 0.0, 0.0);
-    glDrawBuffers(GL_COLOR_ATTACHMENT2);
+    glDrawBuffers(1,&attachments[2]);
     glClear(GL_COLOR_BUFFER_BIT);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     return fb;
@@ -119,6 +131,21 @@ GLuint createlist(void)
     return list;
 }
 
+void blit(GLuint texture, GLuint list)
+{
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glCallList(list);
+}
+
+void reshade(int w, int h)
+{
+    rprogram = createprogram(createshader(vshader, GL_VERTEX_SHADER),
+                             createshader(rshader, GL_FRAGMENT_SHADER), w, h);
+    fprogram = createprogram(createshader(vshader, GL_VERTEX_SHADER),
+                             createshader(fshader, GL_FRAGMENT_SHADER), w, h);
+    sprogram = createprogram(createshader(vshader, GL_VERTEX_SHADER),
+                             createshader(sshader, GL_FRAGMENT_SHADER), w, h);
+}
 
 void prepare(GLFWwindow *window, int w, int h)
 {
@@ -126,7 +153,7 @@ void prepare(GLFWwindow *window, int w, int h)
     tex1 = createtexture(w,h);
     tex2 = createtexture(w,h);
     texs = createtexture(w,h);
-    reshade(window,w,h);
+    reshade(w,h);
     fb = createfb(tex1,tex2,texs);
     pb = createpb();
     drawlist = createlist();
@@ -159,6 +186,9 @@ int main(int argc, char **argv)
         windowh = atoi(argv[2]);
     }
 
+    int w = windoww;
+    int h = windowh;
+
     glfwInit();
     GLFWwindow* window = glfwCreateWindow(windoww,windowh,"mio",NULL,NULL);
 
@@ -168,13 +198,66 @@ int main(int argc, char **argv)
     glfwSetCursorPosCallback(window,&cursor_callback);
     glfwSwapInterval(1);
 
-    prepare(window,windoww,windowh);
+    prepare(window,w,h);
 
 
     while(glfwWindowShouldClose(window)==GL_FALSE)
     {
+        glPushAttrib(GL_VIEWPORT_BIT);
+        glViewport(0, 0, w, h);
+        glBindFramebuffer(GL_FRAMEBUFFER,fb);
+        glUseProgram(fprogram);
 
+        for(int i=0;i<SMPSIZE;i++)
+        {
+            if(i&1)
+            {
+                glDrawBuffers(1,&attachments[1]);
+                glBindTexture(GL_TEXTURE_2D,tex1);
+            }
+            else
+            {
+                glDrawBuffers(1,&attachments[0]);
+                glBindTexture(GL_TEXTURE_2D,tex2);
+            }
 
+            glCallList(drawlist);
+
+            //glDrawBuffers(1,&attachments[2]);
+            //glCallList(minilist[i]);
+        }
+
+        // SOUND BLOCK
+
+        /*
+        glBindBuffer(GL_PIXEL_PACK_BUFFER,pb);
+        glReadBuffer(GL_COLOR_ATTACHMENT2);
+        glReadPixels(0, 0, 256, 16, GL_RED, GL_FLOAT, 0);
+
+        //  mappy = glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
+        // (AL10/alBufferData b EXTFloat32/AL_FORMAT_MONO_FLOAT32 mappy SAMPLERATE))
+
+        glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER,0);
+        glReadBuffer(GL_FRONT);
+
+        glPopAttrib();
+        glBindFramebuffer(GL_FRAMEBUFFER,0);
+        */
+
+        // RENDER BLOCK
+
+        if(mousel)
+        {
+            int x = (int)((mousex * w) / windoww);
+            int y = h - (int)((mousey * h) / windowh) - 1;
+
+            glBindTexture(GL_TEXTURE_2D, tex1);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, 1, 1, GL_RGBA, GL_FLOAT, mousec);
+        }
+
+        glUseProgram(rprogram);
+        blit(tex1,drawlist);
 
         glfwPollEvents();
         glfwSwapBuffers(window);
