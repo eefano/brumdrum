@@ -223,7 +223,7 @@ void mouse_callback(GLFWwindow *window, int b, int a, int m)
         int x = (int)((mousex * drumw) / windoww);
         int y = drumh - (int)((mousey * drumh) / windowh) - 1;
 
-        glBindTexture(GL_TEXTURE_2D, tex1);
+        glBindTexture(GL_TEXTURE_2D, tex2);
         glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, 1, 1, GL_RGBA, GL_FLOAT, mousec);
 
         glUseProgram(rprogram);
@@ -264,7 +264,7 @@ int process (jack_nframes_t nframes, void *arg)
     glBindFramebuffer(GL_FRAMEBUFFER,fb);
     glUseProgram(fprogram);
 
-    for(int i=0;i<1;i++,flip^=1)
+    for(int i=0;i<2;i++,flip^=1)
     {
         if(flip)
         {
@@ -283,9 +283,10 @@ int process (jack_nframes_t nframes, void *arg)
 
     //glBindBuffer(GL_PIXEL_PACK_BUFFER,pb);
 
-    glReadBuffer(attachments[0]);
+    //glReadBuffer(attachments[1]);
+    //printf("glReadBuffers %d\r\n",glGetError());
     glReadPixels(0, 0, drumw, nframes/drumw, GL_RED, GL_FLOAT, out);
-    glReadBuffer(GL_FRONT);
+    //glReadBuffer(GL_FRONT);
 
 
     //glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
