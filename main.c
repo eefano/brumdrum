@@ -2,6 +2,7 @@
 #include <GLFW/glfw3.h>
 
 #include <stdlib.h>
+#include <stdio.h>
 
 
 int windoww = 256, windowh = 256, mousel = GL_FALSE;
@@ -36,7 +37,7 @@ char vshader[]= "varying vec2 v_texCoord;"
 char rshader[]= "uniform sampler2D tex;"
                 "varying vec2 v_texCoord;"
                 "void main() {"
-                "float r = texture2D(tex, v_texCoord);"
+                "float r = texture2D(tex, v_texCoord).r;"
                 "gl_FragColor = vec4(r,r,r,r);"
                 "}";
 
@@ -44,7 +45,7 @@ char fshader[]= "varying vec2 v_texCoord;"
                 "uniform sampler2D tex;"
                 "uniform float du;"
                 "uniform float dv;"
-                "uniform float aflex,adamp,bflex,bdamp;"
+                "uniform float aflex,adamp;"
 
                 "void main() {"
 
@@ -62,7 +63,7 @@ char fshader[]= "varying vec2 v_texCoord;"
                 "float Wr = W.r - off;"
                 "float Sr = S.r - off;"
 
-                "float X = ((Nr+Wr+Sr+Er) * bflex - G) * bdamp  + off;"
+                "float X = ((Nr+Wr+Sr+Er) * aflex - G) * adamp  + off;"
 
                 "gl_FragColor = vec4(X,R,0.0,1.0);"
                 "}";
@@ -71,33 +72,38 @@ char fshader[]= "varying vec2 v_texCoord;"
 GLuint createshader(const GLchar *source,GLenum type)
 {
     GLuint shader = glCreateShader(type);
+    printf("glCreateShader %d\r\n",glGetError());
     glShaderSource(shader,1,&source,NULL);
+    printf("glShaderSource %d\r\n",glGetError());
     glCompileShader(shader);
+    printf("glCompileShader %d\r\n",glGetError());
     return shader;
 }
 
-void varpars(GLuint program, float aflex, float adamp, float bflex, float bdamp)
+void varpars(GLuint program, float aflex, float adamp)
 {
     glUseProgram(program);
     glUniform1f(glGetUniformLocation(program, "aflex"), aflex);
     glUniform1f(glGetUniformLocation(program, "adamp"), adamp);
-    glUniform1f(glGetUniformLocation(program, "bflex"), bflex);
-    glUniform1f(glGetUniformLocation(program, "bdamp"), bdamp);
     glUseProgram(0);
 }
 
 GLuint createprogram (GLuint vsh,GLuint fsh,int w,int h)
 {
     GLuint program = glCreateProgram();
+    printf("glCreateProgram %d\r\n",glGetError());
     glAttachShader(program, vsh);
+    printf("glAttachShader %d\r\n",glGetError());
     glAttachShader(program, fsh);
+    printf("glAttachShader %d\r\n",glGetError());
     glLinkProgram(program);
+    printf("glLinkProgram %d\r\n",glGetError());
     glUseProgram(program);
+    printf("glUseProgram %d\r\n",glGetError());
     glUniform1i(glGetUniformLocation(program, "tex"), 0);
     glUniform1f(glGetUniformLocation(program, "du"), (1.0 / w));
     glUniform1f(glGetUniformLocation(program, "dv"), (1.0 / h));
     glUseProgram(0);
-    varpars(program, 0.51, 0.995, 0.5, 0.995);
     return program;
 }
 
@@ -113,6 +119,7 @@ GLuint createtexture (int w, int h)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_FLOAT, 0);
+    printf("glTexImage2D %d\r\n",glGetError());
     return texture;
 }
 
@@ -130,17 +137,26 @@ GLuint createfb(GLuint tex1, GLuint tex2, GLuint texs)
 {
     GLuint fb;
     glGenFramebuffers(1, &fb);
+    printf("glGenFramebuffers %d\r\n",glGetError());
     glBindFramebuffer(GL_FRAMEBUFFER, fb);
+    printf("glBindFramebuffer %d\r\n",glGetError());
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex1, 0);
+    printf("glFramebufferTexture2D %d\r\n",glGetError());
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, tex2, 0);
+    printf("glFramebufferTexture2D %d\r\n",glGetError());
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, texs, 0);
+    printf("glFramebufferTexture2D %d\r\n",glGetError());
+    printf("glCheckFramebufferStatus %d\r\n",glCheckFramebufferStatus(GL_FRAMEBUFFER));
     glClearColor(0.5, 0.5, 0.5, 1.0);
     glDrawBuffers(1,&attachments[0]);
+    printf("glDrawBuffers %d\r\n",glGetError());
     glClear(GL_COLOR_BUFFER_BIT);
     glDrawBuffers(1,&attachments[1]);
+    printf("glDrawBuffers %d\r\n",glGetError());
     glClear(GL_COLOR_BUFFER_BIT);
     glClearColor(0.25, 0.0, 0.0, 0.0);
     glDrawBuffers(1,&attachments[2]);
+    printf("glDrawBuffers %d\r\n",glGetError());
     glClear(GL_COLOR_BUFFER_BIT);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     return fb;
@@ -173,12 +189,15 @@ void blit(GLuint texture, GLuint list)
 
 void reshade(int w, int h)
 {
-    GLuint v = createshader(vshader, GL_VERTEX_SHADER);
-    GLuint r = createshader(rshader, GL_VERTEX_SHADER);
-    GLuint f = createshader(fshader, GL_VERTEX_SHADER);
+    GLuint v1 = createshader(vshader, GL_VERTEX_SHADER);
+    GLuint r = createshader(rshader, GL_FRAGMENT_SHADER);
+    GLuint v2 = createshader(vshader, GL_VERTEX_SHADER);
+    GLuint f = createshader(fshader, GL_FRAGMENT_SHADER);
 
-    rprogram = createprogram(v,r,w,h);
-    fprogram = createprogram(v,f,w,h);
+    rprogram = createprogram(v1,r,w,h);
+    fprogram = createprogram(v2,f,w,h);
+
+    varpars(fprogram, 0.5, 0.9999970);
 }
 
 void prepare(GLFWwindow *window, int w, int h)
@@ -238,16 +257,19 @@ int main(int argc, char **argv)
     prepare(window,w,h);
 
 
+    int flip=0;
+
     while(glfwWindowShouldClose(window)==GL_FALSE)
     {
+
         glPushAttrib(GL_VIEWPORT_BIT);
         glViewport(0, 0, w, h);
         glBindFramebuffer(GL_FRAMEBUFFER,fb);
         glUseProgram(fprogram);
 
-        for(int i=0;i<SMPSIZE;i++)
+        for(int i=0;i<1;i++,flip^=1)
         {
-            if(i&1)
+            if(flip)
             {
                 glDrawBuffers(1,&attachments[1]);
                 glBindTexture(GL_TEXTURE_2D,tex1);
@@ -264,8 +286,8 @@ int main(int argc, char **argv)
             //glCallList(minilist[i]);
         }
 
-        // SOUND BLOCK
 
+        // SOUND BLOCK
         /*
         glBindBuffer(GL_PIXEL_PACK_BUFFER,pb);
         glReadBuffer(GL_COLOR_ATTACHMENT2);
@@ -277,10 +299,10 @@ int main(int argc, char **argv)
         glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
         glBindBuffer(GL_PIXEL_PACK_BUFFER,0);
         glReadBuffer(GL_FRONT);
+        */
 
         glPopAttrib();
         glBindFramebuffer(GL_FRAMEBUFFER,0);
-        */
 
         // RENDER BLOCK
 
@@ -298,6 +320,7 @@ int main(int argc, char **argv)
 
         glfwPollEvents();
         glfwSwapBuffers(window);
+
     }
 
     glfwDestroyWindow(window);
