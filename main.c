@@ -37,7 +37,7 @@ char vshader[]= "varying vec2 v_texCoord;"
 char rshader[]= "uniform sampler2D tex;"
                 "varying vec2 v_texCoord;"
                 "void main() {"
-                "float r = texture2D(tex, v_texCoord).r;"
+                "float r = texture2D(tex, v_texCoord).r + 0.5;"
                 "gl_FragColor = vec4(r,r,r,r);"
                 "}";
 
@@ -45,27 +45,16 @@ char fshader[]= "varying vec2 v_texCoord;"
                 "uniform sampler2D tex;"
                 "uniform float du;"
                 "uniform float dv;"
-                "uniform float aflex,adamp;"
-
                 "void main() {"
-
-                "float off = 0.5;"
-                "float R = texture2D( tex, v_texCoord ).r;"
-                "float G = texture2D( tex, v_texCoord ).g - off;"
-
+                "vec4 C = texture2D( tex, v_texCoord );"
                 "vec4 E = texture2D( tex, vec2(v_texCoord.x + du, v_texCoord.y) );"
                 "vec4 N = texture2D( tex, vec2(v_texCoord.x, v_texCoord.y + dv) );"
                 "vec4 W = texture2D( tex, vec2(v_texCoord.x - du, v_texCoord.y) );"
                 "vec4 S = texture2D( tex, vec2(v_texCoord.x, v_texCoord.y - dv) );"
 
-                "float Er = E.r - off;"
-                "float Nr = N.r - off;"
-                "float Wr = W.r - off;"
-                "float Sr = S.r - off;"
+                "float X = ((N.r+W.r+S.r+E.r) * 0.5 - C.g) * C.b ;"
 
-                "float X = ((Nr+Wr+Sr+Er) * aflex - G) * adamp  + off;"
-
-                "gl_FragColor = vec4(X,R,0.0,1.0);"
+                "gl_FragColor = vec4(X,C.r,C.b,1.0);"
                 "}";
 
 
@@ -78,14 +67,6 @@ GLuint createshader(const GLchar *source,GLenum type)
     glCompileShader(shader);
     printf("glCompileShader %d\r\n",glGetError());
     return shader;
-}
-
-void varpars(GLuint program, float aflex, float adamp)
-{
-    glUseProgram(program);
-    glUniform1f(glGetUniformLocation(program, "aflex"), aflex);
-    glUniform1f(glGetUniformLocation(program, "adamp"), adamp);
-    glUseProgram(0);
 }
 
 GLuint createprogram (GLuint vsh,GLuint fsh,int w,int h)
@@ -147,14 +128,13 @@ GLuint createfb(GLuint tex1, GLuint tex2, GLuint texs)
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, texs, 0);
     printf("glFramebufferTexture2D %d\r\n",glGetError());
     printf("glCheckFramebufferStatus %d\r\n",glCheckFramebufferStatus(GL_FRAMEBUFFER));
-    glClearColor(0.5, 0.5, 0.5, 1.0);
+    glClearColor(0.0, 0.0, 0.9, 1.0);
     glDrawBuffers(1,&attachments[0]);
     printf("glDrawBuffers %d\r\n",glGetError());
     glClear(GL_COLOR_BUFFER_BIT);
     glDrawBuffers(1,&attachments[1]);
     printf("glDrawBuffers %d\r\n",glGetError());
     glClear(GL_COLOR_BUFFER_BIT);
-    glClearColor(0.25, 0.0, 0.0, 0.0);
     glDrawBuffers(1,&attachments[2]);
     printf("glDrawBuffers %d\r\n",glGetError());
     glClear(GL_COLOR_BUFFER_BIT);
@@ -196,8 +176,6 @@ void reshade(int w, int h)
 
     rprogram = createprogram(v1,r,w,h);
     fprogram = createprogram(v2,f,w,h);
-
-    varpars(fprogram, 0.5, 0.9999970);
 }
 
 void prepare(GLFWwindow *window, int w, int h)
