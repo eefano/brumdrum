@@ -25,13 +25,47 @@ GLuint drawlist;
 
 GLuint rprogram;
 GLuint fprogram;
-GLuint sprogram;
 
 
-char vshader[]="";
-char rshader[]="";
-char fshader[]="";
-char sshader[]="";
+char vshader[]= "varying vec2 v_texCoord;"
+                "void main() {"
+                "v_texCoord = gl_MultiTexCoord0.xy;"
+                "gl_Position=ftransform();"
+                "}";
+
+char rshader[]= "uniform sampler2D tex;"
+                "varying vec2 v_texCoord;"
+                "void main() {"
+                "float r = texture2D(tex, v_texCoord);"
+                "gl_FragColor = vec4(r,r,r,r);"
+                "}";
+
+char fshader[]= "varying vec2 v_texCoord;"
+                "uniform sampler2D tex;"
+                "uniform float du;"
+                "uniform float dv;"
+                "uniform float aflex,adamp,bflex,bdamp;"
+
+                "void main() {"
+
+                "float off = 0.5;"
+                "float R = texture2D( tex, v_texCoord ).r;"
+                "float G = texture2D( tex, v_texCoord ).g - off;"
+
+                "vec4 E = texture2D( tex, vec2(v_texCoord.x + du, v_texCoord.y) );"
+                "vec4 N = texture2D( tex, vec2(v_texCoord.x, v_texCoord.y + dv) );"
+                "vec4 W = texture2D( tex, vec2(v_texCoord.x - du, v_texCoord.y) );"
+                "vec4 S = texture2D( tex, vec2(v_texCoord.x, v_texCoord.y - dv) );"
+
+                "float Er = E.r - off;"
+                "float Nr = N.r - off;"
+                "float Wr = W.r - off;"
+                "float Sr = S.r - off;"
+
+                "float X = ((Nr+Wr+Sr+Er) * bflex - G) * bdamp  + off;"
+
+                "gl_FragColor = vec4(X,R,0.0,1.0);"
+                "}";
 
 
 GLuint createshader(const GLchar *source,GLenum type)
@@ -139,12 +173,12 @@ void blit(GLuint texture, GLuint list)
 
 void reshade(int w, int h)
 {
-    rprogram = createprogram(createshader(vshader, GL_VERTEX_SHADER),
-                             createshader(rshader, GL_FRAGMENT_SHADER), w, h);
-    fprogram = createprogram(createshader(vshader, GL_VERTEX_SHADER),
-                             createshader(fshader, GL_FRAGMENT_SHADER), w, h);
-    sprogram = createprogram(createshader(vshader, GL_VERTEX_SHADER),
-                             createshader(sshader, GL_FRAGMENT_SHADER), w, h);
+    GLuint v = createshader(vshader, GL_VERTEX_SHADER);
+    GLuint r = createshader(rshader, GL_VERTEX_SHADER);
+    GLuint f = createshader(fshader, GL_VERTEX_SHADER);
+
+    rprogram = createprogram(v,r,w,h);
+    fprogram = createprogram(v,f,w,h);
 }
 
 void prepare(GLFWwindow *window, int w, int h)
@@ -191,6 +225,9 @@ int main(int argc, char **argv)
 
     glfwInit();
     GLFWwindow* window = glfwCreateWindow(windoww,windowh,"mio",NULL,NULL);
+
+    glfwMakeContextCurrent(window);
+    glewInit();
 
     glfwSetWindowCloseCallback(window,&close_callback);
     glfwSetWindowSizeCallback(window,&size_callback);
