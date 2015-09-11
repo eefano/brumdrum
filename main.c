@@ -1,12 +1,23 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+#include <jack/jack.h>
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
+#include <pthread.h>
 
 
-int windoww = 256, windowh = 256, mousel = GL_FALSE;
+pthread_mutex_t lock;
+
+jack_port_t *input_port;
+jack_port_t *output_port;
+jack_client_t *client;
+
+int windoww = 256, windowh = 256, drumw = 256, drumh = 256, mousel = GL_FALSE, flip=0;
 float mousec[4]={1.0, 1.0, 1.0, 1.0};
+
+GLFWwindow* window;
 
 const GLenum attachments[3]={GL_COLOR_ATTACHMENT0,GL_COLOR_ATTACHMENT1,GL_COLOR_ATTACHMENT2};
 
@@ -38,7 +49,7 @@ char rshader[]= "uniform sampler2D tex;"
                 "varying vec2 v_texCoord;"
                 "void main() {"
                 "float r = texture2D(tex, v_texCoord).r + 0.5;"
-                "gl_FragColor = vec4(r,r,r,r);"
+                "gl_FragColor = vec4(r,r,r,1.0);"
                 "}";
 
 char fshader[]= "varying vec2 v_texCoord;"
@@ -128,7 +139,7 @@ GLuint createfb(GLuint tex1, GLuint tex2, GLuint texs)
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, texs, 0);
     printf("glFramebufferTexture2D %d\r\n",glGetError());
     printf("glCheckFramebufferStatus %d\r\n",glCheckFramebufferStatus(GL_FRAMEBUFFER));
-    glClearColor(0.0, 0.0, 0.9, 1.0);
+    glClearColor(0.0, 0.0, 1.0, 1.0);
     glDrawBuffers(1,&attachments[0]);
     printf("glDrawBuffers %d\r\n",glGetError());
     glClear(GL_COLOR_BUFFER_BIT);
@@ -161,12 +172,6 @@ GLuint createlist(void)
     return list;
 }
 
-void blit(GLuint texture, GLuint list)
-{
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glCallList(list);
-}
-
 void reshade(int w, int h)
 {
     GLuint v1 = createshader(vshader, GL_VERTEX_SHADER);
@@ -178,7 +183,7 @@ void reshade(int w, int h)
     fprogram = createprogram(v2,f,w,h);
 }
 
-void prepare(GLFWwindow *window, int w, int h)
+void prepare(int w, int h)
 {
     glEnable(GL_TEXTURE_2D);
     tex1 = createtexture(w,h);
@@ -197,17 +202,108 @@ void close_callback(GLFWwindow *window)
 void size_callback(GLFWwindow *window, int w, int h)
 {
     windoww = w; windowh = h;
+
+    pthread_mutex_lock(&lock);
+    glfwMakeContextCurrent(window);
+
     glViewport(0,0,w,h);
+
+    glfwMakeContextCurrent(NULL);
+    pthread_mutex_unlock(&lock);
 }
 void mouse_callback(GLFWwindow *window, int b, int a, int m)
 {
-    if (b==GLFW_MOUSE_BUTTON_LEFT && a==GLFW_PRESS) mousel=GL_TRUE;
+    if (b==GLFW_MOUSE_BUTTON_LEFT && a==GLFW_PRESS)
+    {
+        mousel=GL_TRUE;
+
+        pthread_mutex_lock(&lock); glGetError();
+        glfwMakeContextCurrent(window);
+
+        int x = (int)((mousex * drumw) / windoww);
+        int y = drumh - (int)((mousey * drumh) / windowh) - 1;
+
+        glBindTexture(GL_TEXTURE_2D, tex1);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, 1, 1, GL_RGBA, GL_FLOAT, mousec);
+
+        glUseProgram(rprogram);
+        glCallList(drawlist);
+
+        glFlush();
+        glfwSwapBuffers(window);
+
+        glfwMakeContextCurrent(NULL);
+        pthread_mutex_unlock(&lock);
+
+
+    }
     if (b==GLFW_MOUSE_BUTTON_LEFT && a==GLFW_RELEASE) mousel=GL_FALSE;
 }
 void cursor_callback(GLFWwindow *window, double x, double y)
 {
     mousex = x; mousey = y;
 }
+
+
+void jack_shutdown (void *arg)
+{
+}
+void jack_init (void *arg)
+{
+}
+
+int process (jack_nframes_t nframes, void *arg)
+{
+    jack_default_audio_sample_t *out;
+    out = jack_port_get_buffer (output_port, nframes);
+
+    pthread_mutex_lock(&lock);
+    glfwMakeContextCurrent(window); glGetError();
+
+    glViewport(0, 0, drumw, drumh);
+    glBindFramebuffer(GL_FRAMEBUFFER,fb);
+    glUseProgram(fprogram);
+
+    for(int i=0;i<1;i++,flip^=1)
+    {
+        if(flip)
+        {
+            glDrawBuffers(1,&attachments[1]);
+            glBindTexture(GL_TEXTURE_2D,tex1);
+        }
+        else
+        {
+            glDrawBuffers(1,&attachments[0]);
+            glBindTexture(GL_TEXTURE_2D,tex2);
+        }
+        glCallList(drawlist);
+    }
+
+    // SOUND BLOCK
+
+    //glBindBuffer(GL_PIXEL_PACK_BUFFER,pb);
+
+    glReadBuffer(attachments[0]);
+    glReadPixels(0, 0, drumw, nframes/drumw, GL_RED, GL_FLOAT, out);
+    glReadBuffer(GL_FRONT);
+
+
+    //glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
+    //glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+    //glBindBuffer(GL_PIXEL_PACK_BUFFER,0);
+
+
+    glBindFramebuffer(GL_FRAMEBUFFER,0);
+    glViewport(0, 0, windoww, windowh);
+
+    glfwMakeContextCurrent(NULL);
+    pthread_mutex_unlock(&lock);
+
+    return 0;
+}
+
+
+
 
 int main(int argc, char **argv)
 {
@@ -217,77 +313,63 @@ int main(int argc, char **argv)
         windowh = atoi(argv[2]);
     }
 
-    int w = windoww;
-    int h = windowh;
+    drumw = windoww;
+    drumh = windowh;
+
+    pthread_mutex_init(&lock, NULL);
 
     glfwInit();
-    GLFWwindow* window = glfwCreateWindow(windoww,windowh,"mio",NULL,NULL);
+    window = glfwCreateWindow(windoww,windowh,"mio",NULL,NULL);
 
     glfwMakeContextCurrent(window);
     glewInit();
+
+    glClearColor(0.0, 0.0, 0.0, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glfwSwapBuffers(window);
 
     glfwSetWindowCloseCallback(window,&close_callback);
     glfwSetWindowSizeCallback(window,&size_callback);
     glfwSetMouseButtonCallback(window,&mouse_callback);
     glfwSetCursorPosCallback(window,&cursor_callback);
-    glfwSwapInterval(1);
+    glfwSwapInterval(2);
 
-    prepare(window,w,h);
+    prepare(drumw,drumh);
 
+    jack_status_t status;
+    client = jack_client_open ("brumdrum", JackNullOption, &status, NULL);
+    jack_set_thread_init_callback(client, jack_init, 0);
+    jack_set_process_callback (client, process, 0);
+    jack_on_shutdown (client, jack_shutdown, 0);
 
-    int flip=0;
+    output_port = jack_port_register (client, "output",
+                                      JACK_DEFAULT_AUDIO_TYPE,
+                                      JackPortIsOutput, 0);
+
+    jack_activate(client);
+
+    const char **ports = jack_get_ports (client, NULL, NULL,
+                            JackPortIsPhysical|JackPortIsInput);
+
+    jack_connect (client, jack_port_name (output_port), ports[6]);
+    jack_connect (client, jack_port_name (output_port), ports[7]);
 
     while(glfwWindowShouldClose(window)==GL_FALSE)
     {
+        glfwWaitEvents();
 
-        glPushAttrib(GL_VIEWPORT_BIT);
-        glViewport(0, 0, w, h);
-        glBindFramebuffer(GL_FRAMEBUFFER,fb);
-        glUseProgram(fprogram);
-
-        for(int i=0;i<1;i++,flip^=1)
-        {
-            if(flip)
-            {
-                glDrawBuffers(1,&attachments[1]);
-                glBindTexture(GL_TEXTURE_2D,tex1);
-            }
-            else
-            {
-                glDrawBuffers(1,&attachments[0]);
-                glBindTexture(GL_TEXTURE_2D,tex2);
-            }
-
-            glCallList(drawlist);
-
-            //glDrawBuffers(1,&attachments[2]);
-            //glCallList(minilist[i]);
-        }
-
-
-        // SOUND BLOCK
         /*
-        glBindBuffer(GL_PIXEL_PACK_BUFFER,pb);
-        glReadBuffer(GL_COLOR_ATTACHMENT2);
-        glReadPixels(0, 0, 256, 16, GL_RED, GL_FLOAT, 0);
-
-        //  mappy = glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
-        // (AL10/alBufferData b EXTFloat32/AL_FORMAT_MONO_FLOAT32 mappy SAMPLERATE))
-
-        glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
-        glBindBuffer(GL_PIXEL_PACK_BUFFER,0);
-        glReadBuffer(GL_FRONT);
-        */
-
-        glPopAttrib();
-        glBindFramebuffer(GL_FRAMEBUFFER,0);
 
         // RENDER BLOCK
+        pthread_mutex_lock(&lock);
+        glfwMakeContextCurrent(window);
+
+        glfwPollEvents();
 
         if(mousel)
         {
-            int x = (int)((mousex * w) / windoww);
-            int y = h - (int)((mousey * h) / windowh) - 1;
+            int x = (int)((mousex * drumw) / windoww);
+            int y = drumh - (int)((mousey * drumh) / windowh) - 1;
 
             glBindTexture(GL_TEXTURE_2D, tex1);
             glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, 1, 1, GL_RGBA, GL_FLOAT, mousec);
@@ -296,12 +378,18 @@ int main(int argc, char **argv)
         glUseProgram(rprogram);
         blit(tex1,drawlist);
 
-        glfwPollEvents();
+        glfwMakeContextCurrent(NULL);
+        pthread_mutex_unlock(&lock);
+
         glfwSwapBuffers(window);
 
+         */
     }
+    jack_client_close(client);
 
     glfwDestroyWindow(window);
+
+    pthread_mutex_destroy(&lock);
 
     return 0;
 
